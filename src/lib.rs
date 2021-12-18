@@ -5,7 +5,6 @@
     all(feature = "unstable", feature = "alloc"),
     feature(const_btree_new)
 )]
-#![cfg_attr(feature = "unstable", feature(const_fn_trait_bound))]
 #![cfg_attr(
     all(feature = "unstable", feature = "enable-atomics"),
     feature(cfg_target_has_atomic)
@@ -51,10 +50,27 @@ pub trait ConstDefault: Sized {
 
 /// Returns the compilation time default value for a type
 #[inline]
-#[cfg(feature = "unstable")]
-#[cfg_attr(feature = "unstable-docs", doc(cfg(feature = "unstable")))]
-pub const fn const_default<T: ConstDefault>() -> T {
-    T::DEFAULT
+pub const fn const_default<T>() -> T
+where
+    private::TraitBoundWorkaround<T>: ConstDefault,
+{
+    core::mem::ManuallyDrop::into_inner(
+        private::TraitBoundWorkaround::DEFAULT.0,
+    )
+}
+
+mod private {
+    use super::ConstDefault;
+
+    /// A trick accidentally stabilized to use trait bounds in `const fn`s:
+    /// "`Foo<T>: Trait` bounds (`T` is a type param) are allowed in `const fn`s
+    /// #83452" <https://github.com/rust-lang/rust/issues/83452>
+    #[doc(hidden)]
+    pub struct TraitBoundWorkaround<T>(pub core::mem::ManuallyDrop<T>);
+
+    impl<T: ConstDefault> ConstDefault for TraitBoundWorkaround<T> {
+        const DEFAULT: Self = Self(ConstDefault::DEFAULT);
+    }
 }
 
 impl<T> ConstDefault for Option<T> {
